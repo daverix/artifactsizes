@@ -51,17 +51,16 @@ open class CalculateSizesTask : DefaultTask() {
 
         val artifacts = sortedByDescending { it.length() }
 
-        artifacts.map { "${it.getSize().padEnd(12)}${it.name}" }
+        artifacts.map { "${it.length().toSizeString().padEnd(12)}${it.name}" }
                 .distinct()
                 .forEach { println(it) }
 
-        println("Total: ${artifacts.map { it.length() }.sum()}")
+        println("Total: ${artifacts.map { it.length() }.sum().toSizeString()}")
         println()
     }
 
-    private fun File.getSize(): String {
-        var size: Double = length().toDouble()
-
+    private fun Long.toSizeString(): String {
+        var size = toDouble()
         var suffixPower = 0
         while (size > 1024) {
             size /= 1024

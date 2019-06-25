@@ -17,19 +17,19 @@ package net.daverix.artifactsizes
 
 import org.gradle.api.DefaultTask
 import org.gradle.api.artifacts.Configuration
+import org.gradle.api.logging.LogLevel
 import org.gradle.api.tasks.Input
 import org.gradle.api.tasks.Optional
 import org.gradle.api.tasks.TaskAction
 import org.gradle.api.tasks.options.Option
+import org.gradle.internal.component.AmbiguousVariantSelectionException
 import org.gradle.kotlin.dsl.get
-import java.io.File
 
 open class CalculateSizesTask : DefaultTask() {
 
     var configuration: String? = null
         @Option(option = "config", description = "the configuration to calculate artifact sizes from")
         set
-
         @Input
         @Optional
         get
@@ -37,7 +37,7 @@ open class CalculateSizesTask : DefaultTask() {
     @TaskAction
     fun calculate() {
         val config = configuration
-        if(config == null) {
+        if (config == null) {
             project.configurations
                     .filter { it.isCanBeResolved }
                     .forEach { it.calculateSizes() }
@@ -49,15 +49,32 @@ open class CalculateSizesTask : DefaultTask() {
     private fun Configuration.calculateSizes() {
         println("Configuration $name:")
 
-        val artifacts = sortedByDescending { it.length() }
+        try {
+            val artifactSizes = findArtifactSizes()
+                    .sortedByDescending { it.size }
+            for (artifact in artifactSizes) {
+                println("${artifact.size.toSizeString().padEnd(12)} ${artifact.filename} (${artifact.group}:${artifact.artifactId}:${artifact.version})")
+            }
 
-        artifacts.map { "${it.length().toSizeString().padEnd(12)}${it.name}" }
-                .distinct()
-                .forEach { println(it) }
-
-        println("Total: ${artifacts.map { it.length() }.sum().toSizeString()}")
+            println("Total: ${artifactSizes.map { it.size }.sum().toSizeString()}")
+        } catch (ex: AmbiguousVariantSelectionException) {
+            // See https://github.com/gradle/gradle/issues/5426
+            println("Error resolving dependencies for config $name")
+            logger.info("Cannot resolve dependencies for $name", ex)
+        }
         println()
     }
+
+    private fun Configuration.findArtifactSizes(): List<ArtifactSize> =
+            allDependencies.flatMap { dep ->
+                files(dep).map { file ->
+                    ArtifactSize(size = file.length(),
+                            filename = file.name,
+                            group = dep.group ?: "unknown",
+                            artifactId = dep.name,
+                            version = dep.version ?: "not specified")
+                }
+            }
 
     private fun Long.toSizeString(): String {
         var size = toDouble()
@@ -80,4 +97,10 @@ open class CalculateSizesTask : DefaultTask() {
 
         return "$size $suffix"
     }
+
+    private data class ArtifactSize(val size: Long,
+                                    val filename: String,
+                                    val group: String,
+                                    val artifactId: String,
+                                    val version: String)
 }
